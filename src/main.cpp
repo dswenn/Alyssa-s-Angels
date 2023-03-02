@@ -2,6 +2,7 @@
 
 #include <Arduino.h> 
 #include <HCSR04.h> //if missing look on PIO's directory, library is made by gamegine
+#include <NewPing.h>
 
 /*-----------Module Defines-----------*/
 #define enA_1 3
