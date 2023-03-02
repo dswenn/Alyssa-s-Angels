@@ -21,16 +21,24 @@
 #define in3_4 12
 #define in4_4 13
 
-#define speed 75 // 55 is min pwm at full charge w/o stalling...
+#define speed 120 // 55 is min pwm at full charge w/o stalling...
 
-#define TrigPin A1
+#define shareL1 A2
+#define shareR1 A3
+#define shareL2 A4
+#define shareR2 A5
 #define limit 1 //used in orienting L 
+#define maxSensorRange 250
 
 /*-----------Class Declarations-----------*/
-HCSR04 hcL(TrigPin, A2);
-HCSR04 hcR(TrigPin, A3);
-HCSR04 hcL2(TrigPin, A4);
-HCSR04 hcR2(TrigPin, A5);
+// HCSR04 hcL(TrigPin, A2);
+// HCSR04 hcR(TrigPin, A3);
+// HCSR04 hcL2(TrigPin, A4);
+// HCSR04 hcR2(TrigPin, A5);
+NewPing sonarL1(shareL1,shareL1, maxSensorRange);
+NewPing sonarR1(shareR1,shareR1, maxSensorRange);
+NewPing sonarL2(shareL2,shareL2, maxSensorRange);
+NewPing sonarR2(shareR2,shareR2, maxSensorRange);
 
 /*-----------Function Prototypes-----------*/
 //Sensors
@@ -56,13 +64,13 @@ typedef enum {STATE_IDLE, STATE_ORIENT_L, STATE_FORWARD, STATE_ORIENT_H, STATE_B
 STATE_REVERSE, STATE_HOME, STATE_STOP} States_t;
 
 /*-----------Module Variables-----------*/
-float l1;
-float r1;
-float l2;
-float r2;
+int l1;
+int r1;
+int l2;
+int r2;
 int counter; 
-float maxR = 25.0; //in cm, max usable distance limit for orienting L
-float diff = 0.5; //in cm, comparison value for difference between two sensors
+int maxR = 15; //in cm, max usable distance limit for orienting L
+int diff = 75; //in us
 States_t state; 
 
 /*-----------MAIN CODE-----------*//*-----------MAIN CODE-----------*//*-----------MAIN CODE-----------*/
@@ -127,18 +135,21 @@ void loop() {
 
 /*-----------Sensors-----------*/
 bool inRange(void){
-  if (l1 < maxR && r1 < maxR && l2 < maxR && r2 < maxR) return true;
+  if (l1 > 0 && r1 > 0 && l2 > 0 && r2 > 0) return true;
   return false; 
 }
 
 /*-----------States Handlers-----------*/
 void handleOrientL(){
   turnLeft();
-  l1 = hcL.dist();
-  r1 = hcR.dist();
-  l2 = hcL2.dist();
-  r2 = hcR2.dist();
+  l1 = sonarL1.ping(maxR);
+  r1 = sonarR1.ping(maxR);
+  l2 = sonarL2.ping(maxR);
+  r2 = sonarR2.ping(maxR);
   
+
+  //there are multiple ways we can dial in this:
+  //changing "diff" or "limit" or speed of turnLeft()
   if(inRange()){
     if (abs(l1 - r1) < diff && abs(l2 - r2) < diff){
       counter++;
@@ -146,7 +157,7 @@ void handleOrientL(){
       counter = 0;
     }
     if(counter == limit) {
-      Serial.println(" achieved");
+      //Serial.println(" achieved");
       counter = 0;
       state = STATE_STOP; 
       }
@@ -173,7 +184,6 @@ void goForward(){
   analogWrite(enB_4, speed); 
   digitalWrite(in3_4, HIGH);
   digitalWrite(in4_4, LOW);
-  goForward(); 
 }
 
 void goBackward(){
