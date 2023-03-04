@@ -31,11 +31,17 @@
 #define limit 1 //used in orienting L 
 #define maxSensorRange 250
 
+#define shareStopper A1
+
 /*-----------Class Declarations-----------*/
+//Orientors
 NewPing sonarL1(shareL1,shareL1, maxSensorRange);
 NewPing sonarR1(shareR1,shareR1, maxSensorRange);
 NewPing sonarL2(shareL2,shareL2, maxSensorRange);
 NewPing sonarR2(shareR2,shareR2, maxSensorRange);
+
+//Front 
+NewPing stopper(shareStopper,shareStopper, maxSensorRange);
 
 /*-----------Function Prototypes-----------*/
 //Sensors
@@ -44,6 +50,7 @@ bool inRange(void);
 //State Handlers
 void handleOrientL(void); 
 void handleForward(void);
+void handleReverse(void);
 
 //Motors and Movement
 void goForward(void);
@@ -65,9 +72,10 @@ int l1;
 int r1;
 int l2;
 int r2;
+int stopDistance; 
 int counter; 
 int maxR = 15; //in cm, max usable distance limit for orienting L
-int diff = 75; //in us
+int diff = 25; //in us
 int turnSP;
 States_t state; 
 
@@ -111,7 +119,7 @@ void loop() {
     //something 
     break;
   case STATE_REVERSE:
-    //something 
+    handleReverse();  
     break;
   case STATE_HOME:
     //something 
@@ -154,8 +162,8 @@ void handleOrientL(){
     if(counter == limit) {
       counter = 0;
       stopMotor();
-      //state = STATE_FORWARD; 
-      state = STATE_STOP;
+      state = STATE_FORWARD; 
+      //state = STATE_STOP; use for testing
       }
   } else {
     counter = 0;
@@ -163,8 +171,26 @@ void handleOrientL(){
 }
 
 void handleForward(){
-  goForward();
+  stopDistance = stopper.ping(20);
+  if(stopDistance > 0 && stopDistance < 1000){
+    stopMotor(); 
+    delay(1000);
+    state = STATE_REVERSE;
+  } else {
+    goForward();
+  }
 }
+
+void handleReverse(){
+  stopDistance = sonarR1.ping(140);
+  if (stopDistance > 0 && stopDistance < 6000){
+    stopMotor();
+    state = STATE_STOP;
+  } else {
+    goBackward(); 
+  }
+}
+
 
 /*-----------Motors and Movement-----------*/
 void goForward(){
