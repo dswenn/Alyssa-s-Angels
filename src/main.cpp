@@ -2,9 +2,12 @@
 
 #include <Arduino.h> 
 #include <NewPing.h> //the superior Ultrasonic library
+// #include <Servo.h>
 
-/*-----------Module Defines-----------*/
+/*-----------Module Defines-------------------------------------------------------*/
+//Motors
 #define enA_1 3
+#define enA_2 11
 
 //Motor 1
 #define in1_1 2
@@ -22,6 +25,9 @@
 #define in3_4 12
 #define in4_4 13
 
+//Communicator
+#define com A0 
+
 //Ultrasonic Sensors
 #define shareStopper A1
 #define shareL1 A2
@@ -29,16 +35,20 @@
 #define shareL2 A4
 #define shareR2 A5
 
-//Motor 5 (golfer)
-#define in5_1 4
-#define in6_2 5
-#define enA_2 11
+//Connections to second Arduino (golfing mechanism)
+#define positionPin 9
+#define pressReleased 10
+
+// //Motor 5 (golfer)
+// #define in5_1 4
+// #define in6_2 5
+
 
 //non-changing variables
 #define limit 1 //used in orienting L 
 #define maxSensorRange 250
 
-/*-----------Class Declarations-----------*/
+/*-----------Class Declarations-------------------------------------------------------*/
 //Orientors
 NewPing sonarL1(shareL1,shareL1, maxSensorRange);
 NewPing sonarR1(shareR1,shareR1, maxSensorRange);
@@ -48,22 +58,26 @@ NewPing sonarR2(shareR2,shareR2, maxSensorRange);
 //Front 
 NewPing stopper(shareStopper,shareStopper, maxSensorRange);
 
-/*-----------Function Prototypes-----------*/
+// //Servo
+// Servo myservo;
+
+/*-----------Function Prototypes-------------------------------------------------------*/
 //Sensors
 bool inRange(void);
 void sensorTester(void);
 bool crooked(void);
+void printStates(void);
 
 //State Handlers
 void handleOrientL(void); 
-void handleForward(void);
-void handleReverse(void);
-void handleOrientH(void);
-void handleFixH(void); 
+void handleMoveGP(void);
+void handleMoveBP(void); 
+
 void handleShoot(void);
-void handleHome(void); 
+void handleReturn(void); 
 
 //Fixers
+void callFix(void);
 void reorient(void);
 void fixDistance(void);
 
@@ -76,13 +90,12 @@ void turnLeft(void);
 void turnRight(void);
 void stopMotor(void);
 
-/*-----------State Definitions-----------*/
-//if you print out the states, they correspond to their position in the array
+/*-----------State Definitions-------------------------------------------------------*/
 //i.e. Serial.print(STATE_IDLE) --> 0,  etc
-typedef enum {STATE_IDLE, STATE_ORIENT_L, STATE_FORWARD, STATE_ORIENT_H, STATE_FIX_H, STATE_SHOOT, 
-STATE_REVERSE, STATE_HOME, STATE_REORIENT, STATE_FD, STATE_STOP} States_t;
+typedef enum {STATE_IDLE, STATE_ORIENT_L, STATE_MOVEGP, STATE_MOVEBP,
+STATE_SHOOT, STATE_RETURN, STATE_REORIENT, STATE_FD, STATE_HOME, STATE_STOP} States_t;
 
-/*-----------Module Variables-----------*/
+/*-----------Module Variables-------------------------------------------------------*/
 int l1;
 int r1;
 int l2;
@@ -90,22 +103,30 @@ int r2;
 int diff1;
 int diff2; 
 int counter; 
-int direction = 1; //for fix_h
 int maxR = 20; //in cm, max usable distance limit for orienting L
-int cutoffDiff = 10; //in us
+int cutoffDiff = 15; //in us
 
 int stopDistance; 
 int speed; 
 
 int currTime;
 int lastTime; 
+// int startTime;
 
-int inPosition = 1;
+int inPosition = 0;
 int pastInPosition = 0;
 unsigned long golf_timer;
+// int oldPos, newPos = 0;    // servo position
+ 
+// long previousMillis = 0;
+// const int interval = 20;
+
+int stopCounter = 0; 
+
+// int pos = 0;
 
 States_t readState;
-States_t lastState; 
+States_t storedState; 
 States_t state; 
 
 /*-----------MAIN CODE-----------*//*-----------MAIN CODE-----------*//*-----------MAIN CODE-----------*/
@@ -125,80 +146,94 @@ void setup() {
 
   pinMode(in3_4, OUTPUT);
   pinMode(in4_4, OUTPUT);
-  
-  pinMode(enA_2, OUTPUT);
-  pinMode(in5_1, OUTPUT);
-  pinMode(in6_2, OUTPUT);
 
-  analogWrite(enA_2, 0);
-  digitalWrite(in5_1, HIGH);
-  digitalWrite(in6_2, LOW);
+  pinMode(positionPin, OUTPUT);
+  pinMode(pressReleased, INPUT);
+  
+  // pinMode(enA_2, OUTPUT);
+  // pinMode(in5_1, OUTPUT);
+  // pinMode(in6_2, OUTPUT);
+
+  // myservo.attach(9);  // attaches the servo on pin 9 to the servo object
+  
+  // analogWrite(enA_2, 0);
+  // digitalWrite(in5_1, HIGH);
+  // digitalWrite(in6_2, LOW);
 
   state = STATE_IDLE;
+
+  // startTime = millis();
 }
 
 void loop() {
-  if(state != readState){
-    Serial.println(state);
-    readState = state; 
-  }
+  //printStates(); 
   currTime = millis(); 
+  // if (stopCounter == 2) state = STATE_STOP;
+
+  // if(oldPos != newPos && currTime - startTime > interval) {      // Issue command only if desired position changes
+  //   // previousMillis = currTime;
+  //   oldPos = newPos;
+  //   myservo.write(newPos);     // tell servo to go to position 
+  // } 
+
   switch (state) {
   case STATE_IDLE:
     //start timer + other random stuff to do at start up
-    //Serial.println(stopper.ping());
-    //delay(1000);
-    state = STATE_ORIENT_L; 
     //sensorTester(); 
+    state = STATE_ORIENT_L; 
     break;
   case STATE_ORIENT_L:
-    speed = 60; 
+    speed = 65; 
     handleOrientL(); 
     break;
-  case STATE_FORWARD:
+
+  case STATE_MOVEGP:
     speed = 150; 
-    handleForward();
-    if (currTime - lastTime > 1500 && crooked()) {
-      stopMotor(); 
-      lastState = state;
-      state = STATE_REORIENT; 
+    if (currTime - lastTime > 1000 && crooked()) {
+      callFix(); 
+    } else {
+      handleMoveGP();
     }
     break;
-  case STATE_ORIENT_H:
-    speed = 55; 
-    handleOrientH(); 
+  case STATE_MOVEBP:
+    speed = 150;  
+    if (currTime - lastTime > 500 && crooked()) {
+      callFix();  
+    } else {
+      handleMoveBP(); 
+    }
     break;
-  case STATE_FIX_H:
-    speed = 75; 
-    handleFixH();
-    break; 
+
   case STATE_SHOOT:
-    inPosition = 1;
+    digitalWrite(positionPin, HIGH);
+    //delay(1000);
     handleShoot(); 
     //state = STATE_STOP;
     break;
-  case STATE_REVERSE:
-    speed = 150; 
-    handleReverse();  
-    if (currTime - lastTime > 1000 && crooked()) {
-      stopMotor(); 
-      lastState = state;
-      state = STATE_REORIENT; 
+  case STATE_RETURN:
+    speed = 150;
+    if (currTime - lastTime > 500 && crooked()) { //checks if need to fix
+      callFix(); 
+    } else {
+      handleReturn(); 
     }
     break;
-  case STATE_HOME:
-    speed = 150;
-    handleHome(); 
-    break;
+
   case STATE_REORIENT:
-    //speed = 75;
+    speed = 65;
     reorient(); 
     break; 
   case STATE_FD:
     speed = 75;
     fixDistance(); 
     break; 
-  case STATE_STOP: //TESTING state for now
+  
+  case STATE_HOME: 
+    //do something
+    break;
+
+//TESTING state for now
+  case STATE_STOP: 
     stopMotor(); 
     break;
   default: //uh oh moment
@@ -207,7 +242,7 @@ void loop() {
   }
 }
 
-/*-----------Functions Main Implementations-----------*/
+/*-----------Functions Main Implementations-------------------------------------------------------*/
 
 /*-----------Sensors-----------*/
 bool inRange(void){
@@ -219,16 +254,36 @@ bool crooked(void){
   l1 = sonarL1.ping(2*maxR);
   r1 = sonarR2.ping(2*maxR);
 
-  if (abs(l1-r1) > 120) return true;
+  if ((abs(l1-r1) > 100) || l1 == 0 || r1 == 0) return true;
   return false; 
 }
 
-/*-----------States Handlers-----------*/
+void printStates(void){
+    if(state != readState){
+    Serial.println(state);
+    readState = state; 
+  }
+}
+
+void sensorTester(){ 
+  Serial.print("l1: ");
+  Serial.println(sonarL1.ping());
+   Serial.print("r1: ");
+  Serial.println(sonarR1.ping());
+   Serial.print("l2: ");
+  Serial.println(sonarL2.ping());
+   Serial.print("r2: ");
+  Serial.println(sonarR2.ping());
+   delay(1000);
+}
+
+/*-----------States Handlers-------------------------------------------------------*/
 void handleOrientL(){
   l1 = sonarL1.ping(maxR);
   r1 = sonarR1.ping(maxR);
   l2 = sonarL2.ping(maxR);
   r2 = sonarR2.ping(maxR);
+
   diff1 = r1-l1; 
   diff2 = l2-r2; 
   
@@ -243,108 +298,78 @@ void handleOrientL(){
     if(counter == limit) {
       stopMotor();
       counter = 0; 
-      state = STATE_FIX_H; 
-      lastTime = currTime; 
-      //state = STATE_STOP; // use for testing
+      state = STATE_FD; 
+      storedState = STATE_MOVEGP; 
     }
-
   } else {
     counter = 0;
   }
    turnRight();
 }
 
-void handleForward(){
+void handleMoveGP(){
   stopDistance = stopper.ping(12);
 
   if(stopDistance > 0 && stopDistance < 700){
-    stopMotor(); 
-    delay(1000);
-    lastTime = currTime + 1000; 
-    state = STATE_REVERSE;
+    stopMotor();  
+    state = STATE_SHOOT;
   } else {
     goForward();
   }
 }
 
-void handleReverse(){
-  //stopDistance = sonarR2.ping_cm(95);
-  l2 = sonarL2.ping(95);
-  r2 = sonarR2.ping(95);
-  int val = 3200;
+void handleMoveBP(){
+  l2 = sonarL2.ping(75);
+  r2 = sonarR2.ping(75);
 
-  if (l2 > 0 && l2 < val && r2 > 0 && r2 < val){
+  if (l2 == 0 && r2 == 0){
     stopMotor();
-    delay(1000);
-    state = STATE_HOME;
+    state = STATE_SHOOT;
   } else {
-    goBackward(); 
-  }
-}
-
-void handleOrientH(){
-  l1 = sonarL1.ping(3*maxR);
-  r1 = sonarR1.ping(3*maxR);
-
-  if(abs(l1-r1) > cutoffDiff && l1 > 0 && r1 > 0){
-    if(l1 < r1){
-      turnRight();
-    } else {
-      turnLeft();
-    }
-  } else {
-    stopMotor(); 
-    state = STATE_FIX_H;
-  }
-}
-
-void handleFixH(){
-  l1 = sonarL1.ping(2*maxR);
-  r1 = sonarR1.ping(2*maxR);
-  if (l1 > 300 && r1 > 300) {
-    goRight(); 
-  } else {
-    stopMotor(); 
-    if (direction == 1)
-    {
-      state = STATE_FORWARD;
-      direction = 0; 
-    } else {
-      state = STATE_SHOOT; 
-      direction = 1;
-    }
-    
+    goForward(); 
   }
 }
 
 void handleShoot(){
-  if (inPosition && inPosition != pastInPosition) {
-    analogWrite(enA_2, 255);
-    golf_timer = millis();
-  }
+  // if (inPosition && inPosition != pastInPosition) {
+  //   analogWrite(enA_2, 255);
+  //   golf_timer = millis();
+  // }
 
-  if ((inPosition && millis() >= (golf_timer + 4500)) || !inPosition) {
-    analogWrite(enA_2, 0);
-    // tell the robot to start driving again/done golfing
-    inPosition = 0;
+  // if ((inPosition && millis() >= (golf_timer + 8500)) || !inPosition) {
+  //   analogWrite(enA_2, 0);
+  //   // tell the robot to start driving again/done golfing
+  //   inPosition = 0;
+  //   state = STATE_RETURN;
+  // }
+  // pastInPosition = inPosition; 
+  if (pressReleased) {
+    state = STATE_RETURN;
+    digitalWrite(positionPin, 0);     // no longer in position to shoot
   }
-
-  pastInPosition = inPosition;
-  state = STATE_REVERSE; 
 }
 
-void handleHome(){
+void handleReturn(){
   l2 = sonarL2.ping(20);
   r2 = sonarR2.ping(20);
-  int val = 300;
+  int val = 100;
 
   if (l2 > 0 && l2 < val && r2 > 0 && r2 < val){
     stopMotor();
     delay(1000);
-    state = STATE_ORIENT_L;
+    state = STATE_REORIENT;
+    storedState = STATE_MOVEBP;
+    stopCounter++; 
   } else {
     goBackward(); 
   }
+}
+
+/*-----------Fixers-------------------------------------------------------*/
+void callFix(){
+  stopMotor(); 
+  storedState = state;
+  state = STATE_REORIENT;
 }
 
 void reorient(){
@@ -364,17 +389,17 @@ void reorient(){
 void fixDistance(){
   l1 = sonarL1.ping(3*maxR);
   r1 = sonarR1.ping(3*maxR);
-  if(l1 > 350 && r1 > 350){
+  if(l1 > 400 && r1 > 400){
     goRight(); 
-  } else if (l1 < 100 && r1 < 100){
+  } else if (l1 < 200 || r1 < 200){
     goLeft(); 
-  } else {
-    state = lastState; 
+  } else { 
     lastTime = currTime; 
+    state = storedState;
   }
 }
 
-/*-----------Motors and Movement-----------*/
+/*-----------Motors and Movement-------------------------------------------------------*/
 void goForward(){
   analogWrite(enA_1, speed); 
   //Motor 1
@@ -485,19 +510,5 @@ void stopMotor(){
   // Motor 4
   digitalWrite(in3_4, LOW);
   digitalWrite(in4_4, LOW);
-}
-
-void sensorTester(){ 
-  Serial.print("l1: ");
-  Serial.println(sonarL1.ping());
-   Serial.print("r1: ");
-  Serial.println(sonarR1.ping());
-   Serial.print("l2: ");
-  Serial.println(sonarL2.ping());
-   Serial.print("r2: ");
-  Serial.println(sonarR2.ping());
-   delay(1000);
-
-
 }
 
