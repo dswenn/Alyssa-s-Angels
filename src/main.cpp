@@ -29,6 +29,10 @@
 #define shareL2 A4
 #define shareR2 A5
 
+//Motor 5 (golfer)
+#define in5_1 4
+#define in6_2 5
+#define enA_2 11
 
 //non-changing variables
 #define limit 1 //used in orienting L 
@@ -96,6 +100,10 @@ int speed;
 int currTime;
 int lastTime; 
 
+int inPosition = 1;
+int pastInPosition = 0;
+unsigned long golf_timer;
+
 States_t readState;
 States_t lastState; 
 States_t state; 
@@ -117,6 +125,14 @@ void setup() {
 
   pinMode(in3_4, OUTPUT);
   pinMode(in4_4, OUTPUT);
+  
+  pinMode(enA_2, OUTPUT);
+  pinMode(in5_1, OUTPUT);
+  pinMode(in6_2, OUTPUT);
+
+  analogWrite(enA_2, 0);
+  digitalWrite(in5_1, HIGH);
+  digitalWrite(in6_2, LOW);
 
   state = STATE_IDLE;
 }
@@ -157,6 +173,7 @@ void loop() {
     handleFixH();
     break; 
   case STATE_SHOOT:
+    inPosition = 1;
     handleShoot(); 
     //state = STATE_STOP;
     break;
@@ -301,6 +318,18 @@ void handleFixH(){
 }
 
 void handleShoot(){
+  if (inPosition && inPosition != pastInPosition) {
+    analogWrite(enA_2, 255);
+    golf_timer = millis();
+  }
+
+  if ((inPosition && millis() >= (golf_timer + 4500)) || !inPosition) {
+    analogWrite(enA_2, 0);
+    // tell the robot to start driving again/done golfing
+    inPosition = 0;
+  }
+
+  pastInPosition = inPosition;
   state = STATE_REVERSE; 
 }
 
