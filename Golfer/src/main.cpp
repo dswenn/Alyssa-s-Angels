@@ -38,10 +38,14 @@ void setup() {
   pinMode(PWM_PinA, OUTPUT);
   pinMode(in1, OUTPUT);
   pinMode(in2, OUTPUT);
+  pinMode(positionPin, INPUT);
+  pinMode(pressReleased, OUTPUT);
 
   analogWrite(PWM_PinA, 0);
+
   digitalWrite(in1, HIGH);
   digitalWrite(in2, LOW);
+  digitalWrite(pressReleased,LOW); 
 
   startTime = millis();
   myservo.attach(9);  // attaches the servo on pin 9 to the servo object
@@ -57,8 +61,6 @@ void loop() {
     signalDone = 1;
 
     // IF THE ABOVE SERVO CODE DOESN'T WORK, TRY THIS (it just uses delays but that's ok for the end of the game)
-
-
 
     // for (pos = 0; pos <= 180; pos += 1) { // goes from 0 degrees to 180 degrees
     //   // in steps of 1 degree
@@ -76,6 +78,7 @@ void loop() {
   if (inPosition && inPosition != pastInPosition && !signalDone) {       // send commands only when the reading on the pin changes
     analogWrite(PWM_PinA, 255);           // write high
     golf_timer = millis();                // start a timer for the golfing
+    digitalWrite(pressReleased,LOW);
   }
 
   if (((inPosition && currTime >= (golf_timer + pressReleaseTime)) || !inPosition) && !signalDone) {

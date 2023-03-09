@@ -25,9 +25,6 @@
 #define in3_4 12
 #define in4_4 13
 
-//Communicator
-#define com A0 
-
 //Ultrasonic Sensors
 #define shareStopper A1
 #define shareL1 A2
@@ -65,7 +62,8 @@ NewPing stopper(shareStopper,shareStopper, maxSensorRange);
 //Sensors
 bool inRange(void);
 void sensorTester(void);
-bool crooked(void);
+bool crooked(void); //IMPORTANT
+bool close (void); //IMPORTANT
 void printStates(void);
 
 //State Handlers
@@ -76,10 +74,13 @@ void handleMoveBP(void);
 void handleShoot(void);
 void handleReturn(void); 
 
+void handleHome(void);
+
+
 //Fixers
 void callFix(void);
-void reorient(void);
-void fixDistance(void);
+void reorient(void); //IMPORTANT
+void fixDistance(void); //IMPORTANT
 
 //Motors and Movement
 void goForward(void);
@@ -115,13 +116,13 @@ int lastTime;
 
 int inPosition = 0;
 int pastInPosition = 0;
+int lowerBound = 200; 
 unsigned long golf_timer;
-// int oldPos, newPos = 0;    // servo position
- 
-// long previousMillis = 0;
-// const int interval = 20;
 
 int stopCounter = 0; 
+int exception = 0; 
+int pastHomeTime = 0; 
+int homeTime = 0; 
 
 // int pos = 0;
 
@@ -149,6 +150,8 @@ void setup() {
 
   pinMode(positionPin, OUTPUT);
   pinMode(pressReleased, INPUT);
+
+  digitalWrite(pressReleased, LOW);
   
   // pinMode(enA_2, OUTPUT);
   // pinMode(in5_1, OUTPUT);
@@ -166,20 +169,11 @@ void setup() {
 }
 
 void loop() {
-  //printStates(); 
   currTime = millis(); 
-  // if (stopCounter == 2) state = STATE_STOP;
-
-  // if(oldPos != newPos && currTime - startTime > interval) {      // Issue command only if desired position changes
-  //   // previousMillis = currTime;
-  //   oldPos = newPos;
-  //   myservo.write(newPos);     // tell servo to go to position 
-  // } 
+  //printStates(); 
 
   switch (state) {
   case STATE_IDLE:
-    //start timer + other random stuff to do at start up
-    //sensorTester(); 
     state = STATE_ORIENT_L; 
     break;
   case STATE_ORIENT_L:
@@ -188,16 +182,21 @@ void loop() {
     break;
 
   case STATE_MOVEGP:
-    speed = 150; 
-    if (currTime - lastTime > 1000 && crooked()) {
+    speed = 125; 
+    if (currTime - lastTime > 500) {
+      l1 = sonarL1.ping(2*maxR);
+      r1 = sonarR2.ping(2*maxR);
       callFix(); 
     } else {
       handleMoveGP();
     }
     break;
+
   case STATE_MOVEBP:
-    speed = 150;  
-    if (currTime - lastTime > 500 && crooked()) {
+    speed = 125;  
+    if (currTime - lastTime > 500) {
+      l1 = sonarL1.ping(2*maxR);
+      r1 = sonarR2.ping(2*maxR);
       callFix();  
     } else {
       handleMoveBP(); 
@@ -206,13 +205,18 @@ void loop() {
 
   case STATE_SHOOT:
     digitalWrite(positionPin, HIGH);
-    //delay(1000);
     handleShoot(); 
-    //state = STATE_STOP;
+  //    if (digitalRead(pressReleased) == HIGH) {
+  //   state = STATE_RETURN;
+  //   digitalWrite(positionPin, LOW);     // no longer in position to shoot
+  // }
     break;
+
   case STATE_RETURN:
-    speed = 150;
-    if (currTime - lastTime > 500 && crooked()) { //checks if need to fix
+    speed = 125;
+    if (currTime - lastTime > 500) { //checks if need to fix
+      l1 = sonarL1.ping(2*maxR);
+      r1 = sonarR2.ping(2*maxR);
       callFix(); 
     } else {
       handleReturn(); 
@@ -220,7 +224,7 @@ void loop() {
     break;
 
   case STATE_REORIENT:
-    speed = 65;
+    speed = 55;
     reorient(); 
     break; 
   case STATE_FD:
@@ -228,8 +232,9 @@ void loop() {
     fixDistance(); 
     break; 
   
-  case STATE_HOME: 
-    //do something
+  case STATE_HOME:
+    homeTime = millis();  
+    handleHome();
     break;
 
 //TESTING state for now
@@ -251,10 +256,12 @@ bool inRange(void){
 }
 
 bool crooked(void){
-  l1 = sonarL1.ping(2*maxR);
-  r1 = sonarR2.ping(2*maxR);
+  if ((abs(l1-r1) > lowerBound/2)) return true;
+  return false; 
+}
 
-  if ((abs(l1-r1) > 100) || l1 == 0 || r1 == 0) return true;
+bool close(void){
+  if (l1 < lowerBound || r1 < lowerBound) return true;
   return false; 
 }
 
@@ -310,7 +317,7 @@ void handleOrientL(){
 void handleMoveGP(){
   stopDistance = stopper.ping(12);
 
-  if(stopDistance > 0 && stopDistance < 700){
+  if(stopDistance > 0 && stopDistance < 250){
     stopMotor();  
     state = STATE_SHOOT;
   } else {
@@ -331,45 +338,47 @@ void handleMoveBP(){
 }
 
 void handleShoot(){
-  // if (inPosition && inPosition != pastInPosition) {
-  //   analogWrite(enA_2, 255);
-  //   golf_timer = millis();
-  // }
-
-  // if ((inPosition && millis() >= (golf_timer + 8500)) || !inPosition) {
-  //   analogWrite(enA_2, 0);
-  //   // tell the robot to start driving again/done golfing
-  //   inPosition = 0;
-  //   state = STATE_RETURN;
-  // }
-  // pastInPosition = inPosition; 
-  if (pressReleased) {
+  if (digitalRead(pressReleased) == HIGH) {
     state = STATE_RETURN;
-    digitalWrite(positionPin, 0);     // no longer in position to shoot
+    digitalWrite(positionPin, LOW);     // no longer in position to shoot
   }
 }
 
 void handleReturn(){
-  l2 = sonarL2.ping(20);
-  r2 = sonarR2.ping(20);
-  int val = 100;
+  stopDistance = sonarL2.ping(12);
 
-  if (l2 > 0 && l2 < val && r2 > 0 && r2 < val){
+  if (stopDistance > 0 && stopDistance < 700){
     stopMotor();
-    delay(1000);
-    state = STATE_REORIENT;
-    storedState = STATE_MOVEBP;
-    stopCounter++; 
+    pastHomeTime = millis(); 
+    state = STATE_HOME; 
   } else {
     goBackward(); 
   }
 }
 
+void handleHome(){
+  if (homeTime > pastHomeTime + 4000){
+    state = STATE_REORIENT;
+    if (stopCounter % 2 == 0){
+      storedState = STATE_MOVEBP;
+    } else {
+      storedState = STATE_MOVEGP;
+    }
+    stopCounter++;
+  }
+}
 /*-----------Fixers-------------------------------------------------------*/
 void callFix(){
-  stopMotor(); 
-  storedState = state;
-  state = STATE_REORIENT;
+  if (close()) {
+    stopMotor(); 
+    storedState = state;
+    state = STATE_FD;
+    exception = 1; 
+  } else if (crooked()){
+    stopMotor(); 
+    storedState = state;
+    state = STATE_REORIENT;
+  }
 }
 
 void reorient(){
@@ -391,11 +400,17 @@ void fixDistance(){
   r1 = sonarR1.ping(3*maxR);
   if(l1 > 400 && r1 > 400){
     goRight(); 
-  } else if (l1 < 200 || r1 < 200){
+  } else if (l1 < lowerBound || r1 < lowerBound){
     goLeft(); 
   } else { 
+    if (exception == 1)
+    {
+      exception = 0; 
+      state = STATE_REORIENT;
+    } else {
+      state = storedState;
+    }
     lastTime = currTime; 
-    state = storedState;
   }
 }
 
