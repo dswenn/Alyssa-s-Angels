@@ -2,7 +2,6 @@
 
 #include <Arduino.h> 
 #include <NewPing.h> //the superior Ultrasonic library
-// #include <Servo.h>
 
 /*-----------Module Defines-------------------------------------------------------*/
 //Motors
@@ -32,14 +31,8 @@
 #define shareL2 A4
 #define shareR2 A5
 
-//Connections to second Arduino (golfing mechanism)
-#define positionPin 9
-#define pressReleased 10
-
-// //Motor 5 (golfer)
-// #define in5_1 4
-// #define in6_2 5
-
+//Connection to second Arduino 
+#define shoot 9
 
 //non-changing variables
 #define limit 1 //used in orienting L 
@@ -106,25 +99,22 @@ int diff2;
 int counter; 
 int maxR = 20; //in cm, max usable distance limit for orienting L
 int cutoffDiff = 15; //in us
+int lowerBound = 200; 
 
 int stopDistance; 
 int speed; 
 
-int currTime;
-int lastTime; 
-// int startTime;
-
-int inPosition = 0;
-int pastInPosition = 0;
-int lowerBound = 200; 
-unsigned long golf_timer;
-
 int stopCounter = 0; 
 int exception = 0; 
-int pastHomeTime = 0; 
-int homeTime = 0; 
 
-// int pos = 0;
+int32_t currTime;
+int32_t lastTime; 
+
+int32_t pastShootTime = 0;
+int32_t shootTime = 0; 
+
+int32_t pastHomeTime = 0; 
+int32_t homeTime = 0; 
 
 States_t readState;
 States_t storedState; 
@@ -148,29 +138,15 @@ void setup() {
   pinMode(in3_4, OUTPUT);
   pinMode(in4_4, OUTPUT);
 
-  pinMode(positionPin, OUTPUT);
-  pinMode(pressReleased, INPUT);
-
-  digitalWrite(pressReleased, LOW);
-  
-  // pinMode(enA_2, OUTPUT);
-  // pinMode(in5_1, OUTPUT);
-  // pinMode(in6_2, OUTPUT);
-
-  // myservo.attach(9);  // attaches the servo on pin 9 to the servo object
-  
-  // analogWrite(enA_2, 0);
-  // digitalWrite(in5_1, HIGH);
-  // digitalWrite(in6_2, LOW);
+  pinMode(shoot, OUTPUT);
 
   state = STATE_IDLE;
 
-  // startTime = millis();
 }
 
 void loop() {
-  currTime = millis(); 
   //printStates(); 
+  currTime = millis();  
 
   switch (state) {
   case STATE_IDLE:
@@ -204,12 +180,9 @@ void loop() {
     break;
 
   case STATE_SHOOT:
-    digitalWrite(positionPin, HIGH);
+    shootTime = millis(); 
+    digitalWrite(shoot, HIGH);
     handleShoot(); 
-  //    if (digitalRead(pressReleased) == HIGH) {
-  //   state = STATE_RETURN;
-  //   digitalWrite(positionPin, LOW);     // no longer in position to shoot
-  // }
     break;
 
   case STATE_RETURN:
@@ -236,6 +209,7 @@ void loop() {
     homeTime = millis();  
     handleHome();
     break;
+
 
 //TESTING state for now
   case STATE_STOP: 
@@ -306,7 +280,7 @@ void handleOrientL(){
       stopMotor();
       counter = 0; 
       state = STATE_FD; 
-      storedState = STATE_MOVEGP; 
+      storedState = STATE_MOVEBP; 
     }
   } else {
     counter = 0;
@@ -326,11 +300,12 @@ void handleMoveGP(){
 }
 
 void handleMoveBP(){
-  l2 = sonarL2.ping(75);
-  r2 = sonarR2.ping(75);
+  l2 = sonarL2.ping(45); // JUST outside studio
+  r2 = sonarR2.ping(45);
 
   if (l2 == 0 && r2 == 0){
     stopMotor();
+    pastShootTime = millis(); 
     state = STATE_SHOOT;
   } else {
     goForward(); 
@@ -338,9 +313,9 @@ void handleMoveBP(){
 }
 
 void handleShoot(){
-  if (digitalRead(pressReleased) == HIGH) {
+  if (shootTime > pastShootTime + 7000) { // 7 sec shooting? can change value
+    digitalWrite(shoot, LOW);     // no longer in position to shoot
     state = STATE_RETURN;
-    digitalWrite(positionPin, LOW);     // no longer in position to shoot
   }
 }
 
@@ -357,16 +332,17 @@ void handleReturn(){
 }
 
 void handleHome(){
-  if (homeTime > pastHomeTime + 4000){
+  if (homeTime > pastHomeTime + 3000){ // 3 sec loading
     state = STATE_REORIENT;
     if (stopCounter % 2 == 0){
       storedState = STATE_MOVEBP;
     } else {
-      storedState = STATE_MOVEGP;
+      storedState = STATE_MOVEBP; //both are BP since we are shooting from one spot
     }
     stopCounter++;
   }
 }
+
 /*-----------Fixers-------------------------------------------------------*/
 void callFix(){
   if (close()) {
