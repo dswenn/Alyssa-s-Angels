@@ -36,14 +36,10 @@
 #define positionPin 9
 #define pressReleased 10
 
-// //Motor 5 (golfer)
-// #define in5_1 4
-// #define in6_2 5
-
 
 //non-changing variables
 #define limit 1 //used in orienting L 
-#define maxSensorRange 250
+#define maxSensorRange 250 // cm
 
 /*-----------Class Declarations-------------------------------------------------------*/
 //Orientors
@@ -184,7 +180,7 @@ void loop() {
   case STATE_MOVEGP:
     speed = 125; 
     if (currTime - lastTime > 500) {
-      l1 = sonarL1.ping(2*maxR);
+      l1 = sonarL1.ping(2*maxR);  // ping returns microseconds. 1 microsecond *58 = 1 cm, so 40 cm here. that's the max drift you want from wall. assumption. ping returns 0 if doesnt read anything/ timeout.
       r1 = sonarR2.ping(2*maxR);
       callFix(); 
     } else {
@@ -194,7 +190,7 @@ void loop() {
 
   case STATE_MOVEBP:
     speed = 125;  
-    if (currTime - lastTime > 500) {
+    if (currTime - lastTime > 500) {      // check every 0.5 seconds
       l1 = sonarL1.ping(2*maxR);
       r1 = sonarR2.ping(2*maxR);
       callFix();  
@@ -367,6 +363,7 @@ void handleHome(){
     stopCounter++;
   }
 }
+
 /*-----------Fixers-------------------------------------------------------*/
 void callFix(){
   if (close()) {
