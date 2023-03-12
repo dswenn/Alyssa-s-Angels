@@ -62,7 +62,7 @@ void printStates(void);
 //State Handlers
 void handleOrientL(void);
 void handleMoveGP(void);
-void handleMoveBP(void);
+void handleGP(void);
 
 void handleShoot(void);
 void handleReturn(void);
@@ -86,7 +86,7 @@ void stopMotor(void);
 
 /*-----------State Definitions-------------------------------------------------------*/
 //i.e. Serial.print(STATE_IDLE) --> 0,  etc
-typedef enum {STATE_IDLE, STATE_ORIENT_L, STATE_MOVEGP, STATE_MOVEBP,
+typedef enum {STATE_IDLE, STATE_ORIENT_L, STATE_MOVEGP, STATE_GP,
 STATE_SHOOT, STATE_RETURN, STATE_REORIENT, STATE_FD, STATE_HOME, STATE_STOP} States_t;
 
 /*-----------Module Variables-------------------------------------------------------*/
@@ -107,6 +107,8 @@ int speed;
 int stopCounter = 0;
 int exception = 0;
 
+int32_t gametime = 130000; // milliseconds
+
 int32_t currTime;
 int32_t lastTime;
 
@@ -123,7 +125,7 @@ States_t state;
 /*-----------MAIN CODE-----------*//*-----------MAIN CODE-----------*//*-----------MAIN CODE-----------*/
 void setup() {
   Serial.begin(9600);
-  Serial.println("Hello, world! All aboard the Panda Express!");
+  //Serial.println("Hello, world! All aboard the Panda Express!");
 
   pinMode(enA_1, OUTPUT);
   pinMode(in1_1, OUTPUT);
@@ -148,46 +150,49 @@ void loop() {
   //printStates();
   currTime = millis();
 
+  if (currTime >= gametime){
+      state = STATE_STOP;
+  }
+
   switch (state) {
-  case STATE_IDLE:
+  case STATE_IDLE:                  // This is the beginning state.
     state = STATE_ORIENT_L;
     break;
-  case STATE_ORIENT_L:
+  case STATE_ORIENT_L:              // After turning on, the robot will orient itself.
     speed = 65;
     handleOrientL();
     break;
-
-  case STATE_MOVEGP:
+  case STATE_MOVEGP:                // After orienting, the robot will move to just outside of studio
     speed = 125;
     if (currTime - lastTime > 500) {
-      l1 = sonarL1.ping(2*maxR);  // ping returns microseconds. 1 microsecond *58 = 1 cm, so 40 cm here. that's the max drift you want from wall. assumption. ping returns 0 if doesnt read anything/ timeout.
+      l1 = sonarL1.ping(2*maxR);    // Ping returns microseconds (1 microsecond *58 = 1 cm) That's the max drift you want from wall. assumption. ping returns 0 if doesnt read anything/ timeout.
       r1 = sonarR2.ping(2*maxR);
       callFix();
     } else {
       handleMoveGP();
     }
     break;
-
-  case STATE_MOVEBP:
+  case STATE_GP:
     speed = 125;
-    if (currTime - lastTime > 500) {      // check every 0.5 seconds
+    if (currTime - lastTime > 500) { // check every 0.5 seconds
       l1 = sonarL1.ping(2*maxR);
       r1 = sonarR2.ping(2*maxR);
       callFix();
     } else {
-      handleMoveBP();
+      handleGP();
     }
     break;
+   
 
-  case STATE_SHOOT:
+  case STATE_SHOOT:                   // Shoots four balls using millis()
     shootTime = millis();
     digitalWrite(shoot, HIGH);
     handleShoot();
     break;
 
-  case STATE_RETURN:
+  case STATE_RETURN:                  // Returns to studio home  
     speed = 125;
-    if (currTime - lastTime > 500) { //checks if need to fix
+    if (currTime - lastTime > 500) {  //checks if need to fix
       l1 = sonarL1.ping(2*maxR);
       r1 = sonarR2.ping(2*maxR);
       callFix();
@@ -196,7 +201,7 @@ void loop() {
     }
     break;
 
-  case STATE_REORIENT:
+  case STATE_REORIENT:          
     speed = 55;
     reorient();
     break;
@@ -205,14 +210,14 @@ void loop() {
     fixDistance();
     break;
 
-  case STATE_HOME:
+  case STATE_HOME:                      
     homeTime = millis();
     handleHome();
     break;
 
 
 //TESTING state for now
-  case STATE_STOP:
+  case STATE_STOP:                          //  When game timer runs out, robot stops
     stopMotor();
     break;
   default: //uh oh moment
@@ -260,27 +265,27 @@ void sensorTester(){
 
 /*-----------States Handlers-------------------------------------------------------*/
 void handleOrientL(){
-  l1 = sonarL1.ping(maxR);
+  l1 = sonarL1.ping(maxR);      
   r1 = sonarR1.ping(maxR);
   l2 = sonarL2.ping(maxR);
   r2 = sonarR2.ping(maxR);
 
-  diff1 = r1-l1;
-  diff2 = l2-r2;
+  diff1 = r1-l1;    // Bottom side ultrasonic distance sensors
+  diff2 = l2-r2;    // Left side ultrasonic distance sensors
 
   //there are multiple ways we can dial in this:
   //changing "cutoffDiff" or "limit" or speed of turnLeft()
   if(inRange()){
-    if (diff1 < cutoffDiff){
-      counter++;
+    if (diff1 < cutoffDiff){        // cutoffDiff is the threshold range between two sensor readings. 
+      counter++;                    // It's value controls how relaxed or tight the range for stopping is.
    } else {
       counter = 0;
     }
     if(counter == limit) {
       stopMotor();
       counter = 0;
-      state = STATE_FD;
-      storedState = STATE_MOVEBP;
+      state = STATE_FD;             // Fix distance first
+      storedState = STATE_GP;
     }
   } else {
     counter = 0;
@@ -291,7 +296,7 @@ void handleOrientL(){
 void handleMoveGP(){
   stopDistance = stopper.ping(12);
 
-  if(stopDistance > 0 && stopDistance < 250){
+  if(stopDistance > 0 && stopDistance < 250){     // Value is not out of range and is less than 250.
     stopMotor();
     state = STATE_SHOOT;
   } else {
@@ -299,16 +304,16 @@ void handleMoveGP(){
   }
 }
 
-void handleMoveBP(){
-  l2 = sonarL2.ping(45); // JUST outside studio
+void handleGP(){
+  l2 = sonarL2.ping(45);            // The value is the defined range. We want JUST outside studio.
   r2 = sonarR2.ping(45);
 
-  if (l2 == 0 && r2 == 0){
+  if (l2 == 0 && r2 == 0){          // The moment the ultrasonic reads out of defined range, it returns 0
     stopMotor();
     pastShootTime = millis();
-    state = STATE_SHOOT;
+    state = STATE_SHOOT;            
   } else {
-    goForward();
+    goForward();                    // Keeps moving forward if doesn't reach out of range.
   }
 }
 
@@ -335,13 +340,16 @@ void handleHome(){
   if (homeTime > pastHomeTime + 3000){ // 3 sec loading
     state = STATE_REORIENT;
     if (stopCounter % 2 == 0){
-      storedState = STATE_MOVEBP;
+      storedState = STATE_GP;
     } else {
-      storedState = STATE_MOVEBP; //both are BP since we are shooting from one spot
+      storedState = STATE_GP; //both are BP since we are shooting from one spot
     }
     stopCounter++;
   }
 }
+
+
+
 
 /*-----------Fixers-------------------------------------------------------*/
 void callFix(){
@@ -357,26 +365,26 @@ void callFix(){
   }
 }
 
-void reorient(){
+void reorient(){                                          // Turns until L
   l1 = sonarL1.ping(maxR);
   r1 = sonarR1.ping(maxR);
-   if(abs(r1-l1) > 2*cutoffDiff && l1 > 0 && r1 > 0){
+   if(abs(r1-l1) > 2*cutoffDiff && l1 > 0 && r1 > 0){     // Bottom sensors are reading 
     if(l1 < r1){
-      turnRight();
+      turnRight();                                        // Turn based on sensor readings
     } else {
       turnLeft();
     }
-  } else {
+  } else {                                                // Bottom sensors values are close to each other
     state = STATE_FD;
   }
 }
 
-void fixDistance(){
+void fixDistance(){                                       // Goes up or down to desired position
   l1 = sonarL1.ping(3*maxR);
   r1 = sonarR1.ping(3*maxR);
-  if(l1 > 400 && r1 > 400){
+  if(l1 > 400 && r1 > 400){                               // Bottom sensors, goes down
     goRight();
-  } else if (l1 < lowerBound || r1 < lowerBound){
+  } else if (l1 < lowerBound || r1 < lowerBound){         // Goes up
     goLeft();
   } else {
     if (exception == 1)
@@ -389,6 +397,10 @@ void fixDistance(){
     lastTime = currTime;
   }
 }
+
+
+
+
 
 /*-----------Motors and Movement-------------------------------------------------------*/
 void goForward(){
