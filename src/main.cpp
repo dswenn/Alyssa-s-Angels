@@ -1,8 +1,7 @@
 // ME210 Alyssa's Angels
 
-#include <Arduino.h> 
+#include <Arduino.h>
 #include <NewPing.h> //the superior Ultrasonic library
-// #include <Servo.h>
 
 /*-----------Module Defines-------------------------------------------------------*/
 //Motors
@@ -32,13 +31,11 @@
 #define shareL2 A4
 #define shareR2 A5
 
-//Connections to second Arduino (golfing mechanism)
-#define positionPin 9
-#define pressReleased 10
-
+//Connection to second Arduino
+#define shoot 9
 
 //non-changing variables
-#define limit 1 //used in orienting L 
+#define limit 1 //used in orienting L
 #define maxSensorRange 250 // cm
 
 /*-----------Class Declarations-------------------------------------------------------*/
@@ -48,7 +45,7 @@ NewPing sonarR1(shareR1,shareR1, maxSensorRange);
 NewPing sonarL2(shareL2,shareL2, maxSensorRange);
 NewPing sonarR2(shareR2,shareR2, maxSensorRange);
 
-//Front 
+//Front
 NewPing stopper(shareStopper,shareStopper, maxSensorRange);
 
 // //Servo
@@ -63,12 +60,12 @@ bool close (void); //IMPORTANT
 void printStates(void);
 
 //State Handlers
-void handleOrientL(void); 
+void handleOrientL(void);
 void handleMoveGP(void);
-void handleMoveBP(void); 
+void handleMoveBP(void);
 
 void handleShoot(void);
-void handleReturn(void); 
+void handleReturn(void);
 
 void handleHome(void);
 
@@ -98,33 +95,30 @@ int r1;
 int l2;
 int r2;
 int diff1;
-int diff2; 
-int counter; 
+int diff2;
+int counter;
 int maxR = 20; //in cm, max usable distance limit for orienting L
 int cutoffDiff = 15; //in us
+int lowerBound = 200;
 
-int stopDistance; 
-int speed; 
+int stopDistance;
+int speed;
 
-int currTime;
-int lastTime; 
-// int startTime;
+int stopCounter = 0;
+int exception = 0;
 
-int inPosition = 0;
-int pastInPosition = 0;
-int lowerBound = 200; 
-unsigned long golf_timer;
+int32_t currTime;
+int32_t lastTime;
 
-int stopCounter = 0; 
-int exception = 0; 
-int pastHomeTime = 0; 
-int homeTime = 0; 
+int32_t pastShootTime = 0;
+int32_t shootTime = 0;
 
-// int pos = 0;
+int32_t pastHomeTime = 0;
+int32_t homeTime = 0;
 
 States_t readState;
-States_t storedState; 
-States_t state; 
+States_t storedState;
+States_t state;
 
 /*-----------MAIN CODE-----------*//*-----------MAIN CODE-----------*//*-----------MAIN CODE-----------*/
 void setup() {
@@ -144,68 +138,51 @@ void setup() {
   pinMode(in3_4, OUTPUT);
   pinMode(in4_4, OUTPUT);
 
-  pinMode(positionPin, OUTPUT);
-  pinMode(pressReleased, INPUT);
-
-  digitalWrite(pressReleased, LOW);
-  
-  // pinMode(enA_2, OUTPUT);
-  // pinMode(in5_1, OUTPUT);
-  // pinMode(in6_2, OUTPUT);
-
-  // myservo.attach(9);  // attaches the servo on pin 9 to the servo object
-  
-  // analogWrite(enA_2, 0);
-  // digitalWrite(in5_1, HIGH);
-  // digitalWrite(in6_2, LOW);
+  pinMode(shoot, OUTPUT);
 
   state = STATE_IDLE;
 
-  // startTime = millis();
 }
 
 void loop() {
-  currTime = millis(); 
-  //printStates(); 
+  //printStates();
+  currTime = millis();
 
   switch (state) {
   case STATE_IDLE:
-    state = STATE_ORIENT_L; 
+    state = STATE_ORIENT_L;
     break;
   case STATE_ORIENT_L:
-    speed = 65; 
-    handleOrientL(); 
+    speed = 65;
+    handleOrientL();
     break;
 
   case STATE_MOVEGP:
-    speed = 125; 
+    speed = 125;
     if (currTime - lastTime > 500) {
       l1 = sonarL1.ping(2*maxR);  // ping returns microseconds. 1 microsecond *58 = 1 cm, so 40 cm here. that's the max drift you want from wall. assumption. ping returns 0 if doesnt read anything/ timeout.
       r1 = sonarR2.ping(2*maxR);
-      callFix(); 
+      callFix();
     } else {
       handleMoveGP();
     }
     break;
 
   case STATE_MOVEBP:
-    speed = 125;  
+    speed = 125;
     if (currTime - lastTime > 500) {      // check every 0.5 seconds
       l1 = sonarL1.ping(2*maxR);
       r1 = sonarR2.ping(2*maxR);
-      callFix();  
+      callFix();
     } else {
-      handleMoveBP(); 
+      handleMoveBP();
     }
     break;
 
   case STATE_SHOOT:
-    digitalWrite(positionPin, HIGH);
-    handleShoot(); 
-  //    if (digitalRead(pressReleased) == HIGH) {
-  //   state = STATE_RETURN;
-  //   digitalWrite(positionPin, LOW);     // no longer in position to shoot
-  // }
+    shootTime = millis();
+    digitalWrite(shoot, HIGH);
+    handleShoot();
     break;
 
   case STATE_RETURN:
@@ -213,33 +190,34 @@ void loop() {
     if (currTime - lastTime > 500) { //checks if need to fix
       l1 = sonarL1.ping(2*maxR);
       r1 = sonarR2.ping(2*maxR);
-      callFix(); 
+      callFix();
     } else {
-      handleReturn(); 
+      handleReturn();
     }
     break;
 
   case STATE_REORIENT:
     speed = 55;
-    reorient(); 
-    break; 
+    reorient();
+    break;
   case STATE_FD:
     speed = 75;
-    fixDistance(); 
-    break; 
-  
+    fixDistance();
+    break;
+
   case STATE_HOME:
-    homeTime = millis();  
+    homeTime = millis();
     handleHome();
     break;
 
+
 //TESTING state for now
-  case STATE_STOP: 
-    stopMotor(); 
+  case STATE_STOP:
+    stopMotor();
     break;
   default: //uh oh moment
     Serial.println("wtf is going onnnnnn");
-    stopMotor(); 
+    stopMotor();
   }
 }
 
@@ -248,27 +226,27 @@ void loop() {
 /*-----------Sensors-----------*/
 bool inRange(void){
   if (l1 > 0 && r1 > 0 && l2 > 0 && r2 > 0) return true;
-  return false; 
+  return false;
 }
 
 bool crooked(void){
   if ((abs(l1-r1) > lowerBound/2)) return true;
-  return false; 
+  return false;
 }
 
 bool close(void){
   if (l1 < lowerBound || r1 < lowerBound) return true;
-  return false; 
+  return false;
 }
 
 void printStates(void){
     if(state != readState){
     Serial.println(state);
-    readState = state; 
+    readState = state;
   }
 }
 
-void sensorTester(){ 
+void sensorTester(){
   Serial.print("l1: ");
   Serial.println(sonarL1.ping());
    Serial.print("r1: ");
@@ -287,9 +265,9 @@ void handleOrientL(){
   l2 = sonarL2.ping(maxR);
   r2 = sonarR2.ping(maxR);
 
-  diff1 = r1-l1; 
-  diff2 = l2-r2; 
-  
+  diff1 = r1-l1;
+  diff2 = l2-r2;
+
   //there are multiple ways we can dial in this:
   //changing "cutoffDiff" or "limit" or speed of turnLeft()
   if(inRange()){
@@ -300,9 +278,9 @@ void handleOrientL(){
     }
     if(counter == limit) {
       stopMotor();
-      counter = 0; 
-      state = STATE_FD; 
-      storedState = STATE_MOVEGP; 
+      counter = 0;
+      state = STATE_FD;
+      storedState = STATE_MOVEBP;
     }
   } else {
     counter = 0;
@@ -314,7 +292,7 @@ void handleMoveGP(){
   stopDistance = stopper.ping(12);
 
   if(stopDistance > 0 && stopDistance < 250){
-    stopMotor();  
+    stopMotor();
     state = STATE_SHOOT;
   } else {
     goForward();
@@ -322,21 +300,22 @@ void handleMoveGP(){
 }
 
 void handleMoveBP(){
-  l2 = sonarL2.ping(75);
-  r2 = sonarR2.ping(75);
+  l2 = sonarL2.ping(45); // JUST outside studio
+  r2 = sonarR2.ping(45);
 
   if (l2 == 0 && r2 == 0){
     stopMotor();
+    pastShootTime = millis();
     state = STATE_SHOOT;
   } else {
-    goForward(); 
+    goForward();
   }
 }
 
 void handleShoot(){
-  if (digitalRead(pressReleased) == HIGH) {
+  if (shootTime > pastShootTime + 7000) { // 7 sec shooting? can change value
+    digitalWrite(shoot, LOW);     // no longer in position to shoot
     state = STATE_RETURN;
-    digitalWrite(positionPin, LOW);     // no longer in position to shoot
   }
 }
 
@@ -345,20 +324,20 @@ void handleReturn(){
 
   if (stopDistance > 0 && stopDistance < 700){
     stopMotor();
-    pastHomeTime = millis(); 
-    state = STATE_HOME; 
+    pastHomeTime = millis();
+    state = STATE_HOME;
   } else {
-    goBackward(); 
+    goBackward();
   }
 }
 
 void handleHome(){
-  if (homeTime > pastHomeTime + 4000){
+  if (homeTime > pastHomeTime + 3000){ // 3 sec loading
     state = STATE_REORIENT;
     if (stopCounter % 2 == 0){
       storedState = STATE_MOVEBP;
     } else {
-      storedState = STATE_MOVEGP;
+      storedState = STATE_MOVEBP; //both are BP since we are shooting from one spot
     }
     stopCounter++;
   }
@@ -367,12 +346,12 @@ void handleHome(){
 /*-----------Fixers-------------------------------------------------------*/
 void callFix(){
   if (close()) {
-    stopMotor(); 
+    stopMotor();
     storedState = state;
     state = STATE_FD;
-    exception = 1; 
+    exception = 1;
   } else if (crooked()){
-    stopMotor(); 
+    stopMotor();
     storedState = state;
     state = STATE_REORIENT;
   }
@@ -388,7 +367,7 @@ void reorient(){
       turnLeft();
     }
   } else {
-    state = STATE_FD; 
+    state = STATE_FD;
   }
 }
 
@@ -396,24 +375,24 @@ void fixDistance(){
   l1 = sonarL1.ping(3*maxR);
   r1 = sonarR1.ping(3*maxR);
   if(l1 > 400 && r1 > 400){
-    goRight(); 
+    goRight();
   } else if (l1 < lowerBound || r1 < lowerBound){
-    goLeft(); 
-  } else { 
+    goLeft();
+  } else {
     if (exception == 1)
     {
-      exception = 0; 
+      exception = 0;
       state = STATE_REORIENT;
     } else {
       state = storedState;
     }
-    lastTime = currTime; 
+    lastTime = currTime;
   }
 }
 
 /*-----------Motors and Movement-------------------------------------------------------*/
 void goForward(){
-  analogWrite(enA_1, speed); 
+  analogWrite(enA_1, speed);
   //Motor 1
   digitalWrite(in1_1, HIGH);
   digitalWrite(in2_1, LOW);
@@ -429,7 +408,7 @@ void goForward(){
 }
 
 void goBackward(){
-  analogWrite(enA_1, speed); 
+  analogWrite(enA_1, speed);
   //Motor 1
   digitalWrite(in1_1, LOW);
   digitalWrite(in2_1, HIGH);
@@ -446,7 +425,7 @@ void goBackward(){
 
 void goLeft(){
   analogWrite(enA_1, speed);
-  // Motor 1 
+  // Motor 1
   digitalWrite(in1_1, HIGH);
   digitalWrite(in2_1, LOW);
   // Motor 2
@@ -461,7 +440,7 @@ void goLeft(){
 }
 
 void goRight(){
-  analogWrite(enA_1, speed); 
+  analogWrite(enA_1, speed);
   // Motor 1
   digitalWrite(in1_1, LOW);
   digitalWrite(in2_1, HIGH);
@@ -478,13 +457,13 @@ void goRight(){
 
 void turnRight(){
   analogWrite(enA_1, speed);
-  // Motor 1 
+  // Motor 1
   digitalWrite(in1_1, LOW);
   digitalWrite(in2_1, HIGH);
   // Motor 2
   digitalWrite(in3_2, HIGH);
   digitalWrite(in4_2, LOW);
-  // Motor 3 
+  // Motor 3
   digitalWrite(in1_3, HIGH);
   digitalWrite(in2_3, LOW);
   // Motor 4
@@ -493,7 +472,7 @@ void turnRight(){
 }
 
 void turnLeft(){
-  analogWrite(enA_1, speed); 
+  analogWrite(enA_1, speed);
   //Motor 1
   digitalWrite(in1_1, HIGH);
   digitalWrite(in2_1, LOW);
@@ -503,13 +482,13 @@ void turnLeft(){
   // Motor 3
   digitalWrite(in1_3, LOW);
   digitalWrite(in2_3, HIGH);
-  // Motor 4 
+  // Motor 4
   digitalWrite(in3_4, HIGH);
   digitalWrite(in4_4, LOW);
 }
 
 void stopMotor(){
-  analogWrite(enA_1, LOW); 
+  analogWrite(enA_1, LOW);
   //Motor 1
   digitalWrite(in1_1, LOW);
   digitalWrite(in2_1, LOW);
@@ -523,4 +502,3 @@ void stopMotor(){
   digitalWrite(in3_4, LOW);
   digitalWrite(in4_4, LOW);
 }
-
