@@ -172,7 +172,6 @@ void loop() {
       handleMoveGP();
     }
     break;
-  
   case STATE_GP:
     speed = 125;
     if (currTime - lastTime > 500) { // check every 0.5 seconds
@@ -285,7 +284,7 @@ void handleOrientL(){
     if(counter == limit) {
       stopMotor();
       counter = 0;
-      state = STATE_FD;
+      state = STATE_FD;             // Fix distance first
       storedState = STATE_GP;
     }
   } else {
@@ -297,7 +296,7 @@ void handleOrientL(){
 void handleMoveGP(){
   stopDistance = stopper.ping(12);
 
-  if(stopDistance > 0 && stopDistance < 250){
+  if(stopDistance > 0 && stopDistance < 250){     // Value is not out of range and is less than 250.
     stopMotor();
     state = STATE_SHOOT;
   } else {
@@ -306,15 +305,15 @@ void handleMoveGP(){
 }
 
 void handleGP(){
-  l2 = sonarL2.ping(45); // JUST outside studio
+  l2 = sonarL2.ping(45);            // The value is the defined range. We want JUST outside studio.
   r2 = sonarR2.ping(45);
 
-  if (l2 == 0 && r2 == 0){
+  if (l2 == 0 && r2 == 0){          // The moment the ultrasonic reads out of defined range, it returns 0
     stopMotor();
     pastShootTime = millis();
-    state = STATE_SHOOT;
+    state = STATE_SHOOT;            
   } else {
-    goForward();
+    goForward();                    // Keeps moving forward if doesn't reach out of range.
   }
 }
 
@@ -366,26 +365,26 @@ void callFix(){
   }
 }
 
-void reorient(){
+void reorient(){                                          // Turns until L
   l1 = sonarL1.ping(maxR);
   r1 = sonarR1.ping(maxR);
-   if(abs(r1-l1) > 2*cutoffDiff && l1 > 0 && r1 > 0){
+   if(abs(r1-l1) > 2*cutoffDiff && l1 > 0 && r1 > 0){     // Bottom sensors are reading 
     if(l1 < r1){
-      turnRight();
+      turnRight();                                        // Turn based on sensor readings
     } else {
       turnLeft();
     }
-  } else {
+  } else {                                                // Bottom sensors values are close to each other
     state = STATE_FD;
   }
 }
 
-void fixDistance(){
+void fixDistance(){                                       // Goes up or down to desired position
   l1 = sonarL1.ping(3*maxR);
   r1 = sonarR1.ping(3*maxR);
-  if(l1 > 400 && r1 > 400){
+  if(l1 > 400 && r1 > 400){                               // Bottom sensors, goes down
     goRight();
-  } else if (l1 < lowerBound || r1 < lowerBound){
+  } else if (l1 < lowerBound || r1 < lowerBound){         // Goes up
     goLeft();
   } else {
     if (exception == 1)
