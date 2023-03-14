@@ -104,7 +104,9 @@ int cutoffDiff = 15; //in us
 int upperBound = 600;
 int lowerBound = 450;
 
-int stopDistance;
+int stopDistance1;
+int stopDistance2;
+
 int speed;
 
 int stopCounter = 0;
@@ -209,11 +211,11 @@ void loop() {
     break;
 
   case STATE_REORIENT:          
-    speed = 55;
+    speed = 45;
     reorient();
     break;
   case STATE_FD:
-    speed = 55;
+    speed = 45;
     fixDistance();
     break;
 
@@ -302,10 +304,10 @@ void handleOrientL(){
 }
 
 void handleGP(){
-  l2 = sonarL2.ping(30);            // The value is the defined range. We want JUST outside studio.
-  r2 = sonarR2.ping(30);
+  l2 = sonarL2.ping(100);            // The value is the defined range. We want JUST outside studio.
+  r2 = sonarR2.ping(100);
 
-  if (l2 == 0 && r2 == 0){          // The moment the ultrasonic reads out of defined range, it returns 0
+  if (l2 >= 2200 && r2 >= 2200){          // The moment the ultrasonic reads out of defined range, it returns 0
     stopMotor();
     pastShootTime = millis();
     storedState = STATE_SHOOT;
@@ -323,10 +325,12 @@ void handleShoot(){
 }
 
 void handleReturn(){
-  stopDistance = sonarL2.ping(100);
+  stopDistance1 = sonarL2.ping(100);
+  stopDistance2 = sonarR2.ping(100);
+
   //r2 = sonarL1.ping(100); 
 
-  if (stopDistance < 300){ //us
+  if ((stopDistance1 !=0 && stopDistance2 !=0) && (stopDistance1 <= 350 && stopDistance2 <= 350)){ //us
     stopMotor();
     pastHomeTime = millis();
     storedState = STATE_HOME;
@@ -342,15 +346,12 @@ void handleReturn(){
 }
 
 void handleHome(){
-  if ((homeTime > pastHomeTime + 6000) || digitalRead(button) == LOW ){ //5 sec loading
+  if ((homeTime > pastHomeTime + 2500) || digitalRead(button) == LOW ){ //5 sec loading
     //storedState = STATE_GP; //both are BP since we are shooting from one spot
     //state = STATE_REORIENT; 
     state = STATE_GP; 
   }
 }
-
-
-
 
 /*-----------Fixers-------------------------------------------------------*/
 void callFix(){
@@ -368,16 +369,33 @@ void callFix(){
   }
 }
 
-void reorient(){                                          // Turns until L
+void reorient(){        
+  // delay(150);                                  // Turns until L
   l1 = sonarL1.ping(maxF);
   r1 = sonarR1.ping(maxF);
    if(abs(r1-l1) > 3*cutoffDiff && l1 > 0 && r1 > 0){     // Bottom sensors are reading 
     if(l1 < r1){
-      turnRight();                                        // Turn based on sensor readings
+      //turnRight();                                        // Turn based on sensor readings
+      turnRight();
     } else {
+      //turnLeft();
       turnLeft();
     }
-  } else {                                                // Bottom sensors values are close to each other
+  }
+  // donald new code
+  // delay(100);
+  // l2 = sonarL2.ping(maxF);
+  // r2 = sonarR2.ping(maxF);
+  //  if(abs(r2-l2) > 3*cutoffDiff && l2 > 0 && r2 > 0){     // Bottom sensors are reading 
+  //   if(l2 < r2){
+  //     turnRight();                                        // Turn based on sensor readings
+  //   } else {
+  //     turnLeft();
+  //   }
+  // } 
+  // //end of donald new code
+  
+  else {                                                // Bottom sensors values are close to each other
     state = STATE_FD;
   }
 }
@@ -512,3 +530,36 @@ void stopMotor(){
   digitalWrite(in3_4, LOW);
   digitalWrite(in4_4, LOW);
 }
+/*
+void turnRightless(){
+  analogWrite(enA_1, 100);
+  // Motor 1
+  //digitalWrite(in1_1, LOW);
+  //digitalWrite(in2_1, HIGH);
+  // Motor 2
+  digitalWrite(in3_2, HIGH);
+  digitalWrite(in4_2, LOW);
+  // Motor 3
+  //digitalWrite(in1_3, HIGH);
+  //digitalWrite(in2_3, LOW);
+  // Motor 4
+  digitalWrite(in3_4, LOW);
+  digitalWrite(in4_4, HIGH);
+}
+
+void turnLeftless(){
+  analogWrite(enA_1, 100);
+  //Motor 1
+  //digitalWrite(in1_1, HIGH);
+  //digitalWrite(in2_1, LOW);
+  // Motor 2
+  digitalWrite(in3_2, LOW);
+  digitalWrite(in4_2, HIGH);
+  // Motor 3
+ // digitalWrite(in1_3, LOW);
+  //digitalWrite(in2_3, HIGH);
+  // Motor 4
+  digitalWrite(in3_4, HIGH);
+  digitalWrite(in4_4, LOW);
+}
+*/
