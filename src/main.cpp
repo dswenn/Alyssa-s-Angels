@@ -1,12 +1,24 @@
 // ME210 Alyssa's Angels
 
 #include <Arduino.h>
-#include <NewPing.h> //the superior Ultrasonic library
+#include <NewPing.h> //the best Ultrasonic library made by Tim Eckel
+
+/* Some info about the NewPing library. Definitely recommend reading the full documentation.
+
+.ping function returns microseconds (1 us * 58 = 1 cm OR 1 us * 150 = 1 in)
+.ping_cm function returns rounded to nearest cm
+.ping_in function returns rounded to nearest in
+.ping type functions return 0 if times out (out of range) or too close to something
+.ping type functions can accept a variable that gives it a timeout range, in cm
+
+Library allows sharing of trigger and echo pins. Library also removes pulseIn() delay. 
+
+*/
+
 
 /*-----------Module Defines-------------------------------------------------------*/
-//Motors
+//Motors Speed Control
 #define enA_1 3
-#define enA_2 11
 
 //Motor 1
 #define in1_1 2
@@ -33,7 +45,6 @@
 
 //Connection to second Arduino
 #define shoot 9
-#define button 10 
 
 //non-changing variables
 #define limit 1 //used in orienting L
@@ -41,40 +52,36 @@
 
 /*-----------Class Declarations-------------------------------------------------------*/
 //Orientors
-NewPing sonarL1(shareL1,shareL1, maxSensorRange);
+NewPing sonarL1(shareL1,shareL1, maxSensorRange); //Side 1 is bottom wall
 NewPing sonarR1(shareR1,shareR1, maxSensorRange);
-NewPing sonarL2(shareL2,shareL2, maxSensorRange);
+NewPing sonarL2(shareL2,shareL2, maxSensorRange); //Side 2 is left wall
 NewPing sonarR2(shareR2,shareR2, maxSensorRange);
 
 //Front
 NewPing stopper(shareStopper,shareStopper, maxSensorRange);
 
-// //Servo
-// Servo myservo;
-
 /*-----------Function Prototypes-------------------------------------------------------*/
+//Testers
+void printStates(void);
+void sensorTester(void);
+
 //Sensors
 bool inRange(void);
-void sensorTester(void);
-bool crooked(void); //IMPORTANT
-bool close (void); //IMPORTANT
-void printStates(void);
+bool crooked(void); 
+bool close (void); 
 
 //State Handlers
 void handleOrientL(void);
-void handleMoveGP(void);
 void handleGP(void);
-
+void handleBP(void);
 void handleShoot(void);
 void handleReturn(void);
-
 void handleHome(void);
-
 
 //Fixers
 void callFix(void);
-void reorient(void); //IMPORTANT
-void fixDistance(void); //IMPORTANT
+void reorient(void); 
+void fixDistance(void); 
 
 //Motors and Movement
 void goForward(void);
@@ -86,11 +93,11 @@ void turnRight(void);
 void stopMotor(void);
 
 /*-----------State Definitions-------------------------------------------------------*/
-//i.e. Serial.print(STATE_IDLE) --> 0,  etc
-typedef enum {STATE_IDLE, STATE_ORIENT_L, STATE_MOVEGP, STATE_GP,
+typedef enum {STATE_IDLE, STATE_ORIENT_L, STATE_GP, STATE_BP,
 STATE_SHOOT, STATE_RETURN, STATE_REORIENT, STATE_FD, STATE_HOME, STATE_STOP} States_t;
 
 /*-----------Module Variables-------------------------------------------------------*/
+//Sensor Variables
 int l1;
 int r1;
 int l2;
@@ -98,22 +105,30 @@ int r2;
 int diff1;
 int diff2;
 int counter;
-int maxR = 15; //in cm, max usable distance limit for orienting L
-int maxF = 40; //in cm
-int cutoffDiff = 15; //in us
-int upperBound = 600;
-int lowerBound = 450;
-
+int maxL = 15; //in cm, max distance limit for orienting L, based on STUDIO
+int maxFD = 40; //in cm, max distance for fixing distance away from wall, based on testing
+int cutoffDiff = 15; //microseconds
+int upperBound = 600; //microseconds
+int lowerBound = 450; //microseconds
 int stopDistance;
+
+//Motor Variables
 int speed;
 
-int stopCounter = 0;
-int exception = 0;
+//State Variables
+int checkInterval = 500; //milliseconds
+int toggle = 0; //Allows movement between BP and GP
 
-int32_t gametime = 130000; // milliseconds
+States_t readState;
+States_t storedState;
+States_t state;
 
+//Time Variables
+//All time related ints need to be large enough to hold game time. Thus, 32 bit. 
+int32_t gametime = 130000;
 int32_t currTime;
-int32_t lastTime;
+
+int32_t lastTime; //Used for checkInterval 
 
 int32_t pastShootTime = 0;
 int32_t shootTime = 0;
@@ -121,16 +136,16 @@ int32_t shootTime = 0;
 int32_t pastHomeTime = 0;
 int32_t homeTime = 0;
 
-States_t readState;
-States_t storedState;
-States_t state;
+
 
 /*-----------MAIN CODE-----------*//*-----------MAIN CODE-----------*//*-----------MAIN CODE-----------*/
 void setup() {
-  //Serial.begin(9600);
-  //Serial.println("Hello, world! All aboard the Panda Express!");
+  Serial.begin(9600);
+  Serial.println("Hello, world! All aboard the Panda Express!");
 
+  //Motors
   pinMode(enA_1, OUTPUT);
+
   pinMode(in1_1, OUTPUT);
   pinMode(in2_1, OUTPUT);
 
@@ -143,15 +158,15 @@ void setup() {
   pinMode(in3_4, OUTPUT);
   pinMode(in4_4, OUTPUT);
 
+  //Communication to Arduino 2
   pinMode(shoot, OUTPUT);
-  pinMode(button, INPUT_PULLUP); 
 
   state = STATE_IDLE;
 
 }
 
 void loop() {
-  //printStates();
+  printStates(); //Testing function - removed for actual game performance
   currTime = millis();
 
   if (currTime >= gametime){
@@ -160,98 +175,68 @@ void loop() {
 
 //STATE SWITCHING
   switch (state) {
-  case STATE_IDLE:                  // This is the beginning state.
+  case STATE_IDLE:              //Beginning state, used for any testing or prelim actions
     state = STATE_ORIENT_L;
     break;
-  case STATE_ORIENT_L:              // After turning on, the robot will orient itself.
-    speed = 60;
+  case STATE_ORIENT_L:          //After turning on, the robot will orient itself
+    speed = 55;
     handleOrientL();
     break;
- 
-  // case STATE_MOVEGP:                // After orienting, the robot will move to just outside of studio
-  //   speed = 125;
-  //   if (currTime - lastTime > 500) {
-  //     l1 = sonarL1.ping(2*maxR);    // Ping returns microseconds (1 microsecond *58 = 1 cm) That's the max drift you want from wall. assumption. ping returns 0 if doesnt read anything/ timeout.
-  //     r1 = sonarR2.ping(2*maxR);
-  //     callFix();
-  //   } else {
-  //     handleMoveGP();
-  //   }
-  //   break;
-
-  case STATE_GP:
-    speed = 80;
-    // if (currTime - lastTime > 500) { // check every 0.5 seconds
-    //   l1 = sonarL1.ping(2*maxR);
-    //   r1 = sonarR2.ping(2*maxR);
-      //callFix();
-    // } else {
+  case STATE_GP:                //The robot will move forward to Good Press position
+    speed = 125;
+    if (currTime - lastTime > checkInterval) {
+      callFix();
+    } else {
       handleGP();
-    //}
+    }
     break;
-   
-
-  case STATE_SHOOT:                   // Shoots four balls using millis()
-    shootTime = millis();
+  case STATE_BP:                //The robot will move forward to Bad Press position
+    speed = 80;
+    if (currTime - lastTime > checkInterval) { 
+      callFix();
+    } else {
+      handleBP();
+    }
+    break;
+  case STATE_SHOOT:            //Communicates to second Arduino to start shooting
+    shootTime = currTime;
     digitalWrite(shoot, HIGH);
     handleShoot();
     break;
-
-  case STATE_RETURN:                  // Returns to studio home  
-    speed = 80;
-    // if (currTime - lastTime > 500) {  //checks if need to fix
-    //   l1 = sonarL1.ping(2*maxR);
-    //   r1 = sonarR2.ping(2*maxR);
-      //callFix();
-    // } else {
-       handleReturn();
-    // }
+  case STATE_RETURN:           //Reverses to Studio
+    speed = 125;
+    if (currTime - lastTime > checkInterval) {  
+      callFix();
+    } else {
+      handleReturn();
+    }
     break;
-
-  case STATE_REORIENT:          
+  case STATE_REORIENT:        //State that is called periodically to fix drift      
     speed = 55;
     reorient();
     break;
-  case STATE_FD:
+  case STATE_FD:             //State that is called periodically to fix drift
     speed = 55;
     fixDistance();
     break;
-
-  case STATE_HOME:                      
-    homeTime = millis();
+  case STATE_HOME:           //Loading balls in Studio                      
+    homeTime = currTime;
     handleHome();
     break;
-
-
-//TESTING state for now
-  case STATE_STOP:                          //  When game timer runs out, robot stops
+  case STATE_STOP:          //End game and testing state
+    digitalWrite(shoot, LOW);                    
     stopMotor();
     break;
- 
-  default: //uh oh moment
-    //Serial.println("wtf is going onnnnnn");
+
+  default:                  //uh oh moment
+    Serial.println("damn. something is wrong.");
     stopMotor();
   }
 }
 
 /*-----------Functions Main Implementations-------------------------------------------------------*/
 
-/*-----------Sensors-----------*/
-bool inRange(void){
-  if (l1 > 0 && r1 > 0 && l2 > 0 && r2 > 0) return true;
-  return false;
-}
-
-bool crooked(void){
-  if ((abs(l1-r1) > cutoffDiff*2)) return true;
-  return false;
-}
-
-bool close(void){
-  if (l1 < (lowerBound/2) || r1 < (lowerBound/2)) return true;
-  return false;
-}
-
+/*-----------Testing-----------*/
 void printStates(void){
     if(state != readState){
     Serial.println(state);
@@ -271,30 +256,44 @@ void sensorTester(){
    delay(1000);
 }
 
+/*-----------Sensors-----------*/
+bool inRange(void){
+  if (l1 > 0 && r1 > 0 && l2 > 0 && r2 > 0) return true;
+}
+
+bool crooked(void){
+  if ((abs(l1-r1) > cutoffDiff*2)) return true;
+}
+
+bool close(void){
+  if (l1 < (lowerBound/2) || r1 < (lowerBound/2)) return true;
+}
+
 /*-----------States Handlers-------------------------------------------------------*/
 void handleOrientL(){
-  l1 = sonarL1.ping(maxR);      
-  r1 = sonarR1.ping(maxR);
-  l2 = sonarL2.ping(maxR);
-  r2 = sonarR2.ping(maxR);
+  l1 = sonarL1.ping(maxL);      
+  r1 = sonarR1.ping(maxL);
+  l2 = sonarL2.ping(maxL);
+  r2 = sonarR2.ping(maxL);
 
   diff1 = r1-l1;    // Bottom side ultrasonic distance sensors
   diff2 = l2-r2;    // Left side ultrasonic distance sensors
 
-  //there are multiple ways we can dial in this:
-  //changing "cutoffDiff" or "limit" or speed of turnLeft()
+  /*  There are multiple ways we can dial in this:
+  Changing "cutoffDiff" or "limit" or speed of turnLeft() */
   if(inRange()){
-    if ((diff1 < cutoffDiff) && abs(diff2) < 300){        // cutoffDiff is the threshold range between two sensor readings. 
-      counter++;                    // It's value controls how relaxed or tight the range for stopping is.
-   } else {
+    if ((diff1 < cutoffDiff) && abs(diff2) < 300){        // cutoffDiff is the threshold range between two sensor readings 
+      counter++;                    // The value controls how relaxed or tight the range for stopping is
+      } else {
       counter = 0;
-    }
-    if(counter == limit) {
-      stopMotor();
-      counter = 0;
-      state = STATE_FD;             // Fix distance first
-      storedState = STATE_GP;
-    }
+      }
+        if(counter == limit) {
+          stopMotor();
+          counter = 0;
+          state = STATE_FD;             // Fix distance first
+          storedState = STATE_BP;
+          return;
+        }
   } else {
     counter = 0;
   }
@@ -302,14 +301,24 @@ void handleOrientL(){
 }
 
 void handleGP(){
+  stopDistance = stopper.ping(10);
+  if (stopDistance < 580 && stopDistance > 0){
+    stopMotor(); 
+    storedState = STATE_SHOOT;
+    state = STATE_REORIENT;
+  } else {
+    goForward(); 
+  }
+
+}
+void handleBP(){
   l2 = sonarL2.ping(30);            // The value is the defined range. We want JUST outside studio.
   r2 = sonarR2.ping(30);
 
   if (l2 == 0 && r2 == 0){          // The moment the ultrasonic reads out of defined range, it returns 0
     stopMotor();
-    pastShootTime = millis();
     storedState = STATE_SHOOT;
-    state = STATE_REORIENT;           
+    state = STATE_REORIENT;            
   } else {
     goForward();                    // Keeps moving forward if doesn't reach out of range.
   }
@@ -317,60 +326,64 @@ void handleGP(){
 
 void handleShoot(){
   if (shootTime > pastShootTime + 7000) { // 7 sec shooting? can change value
-    digitalWrite(shoot, LOW);     // no longer in position to shoot
+    digitalWrite(shoot, LOW);             // tells second Arduino to stop shoot 
     state = STATE_RETURN;
+    lastTime = currTime; 
   }
 }
 
 void handleReturn(){
-  stopDistance = sonarL2.ping(100);
-  //r2 = sonarL1.ping(100); 
-
-  if (stopDistance < 300){ //us
+  stopDistance = sonarL2.ping(10);
+  if (stopDistance < 580 && stopDistance > 0){ 
     stopMotor();
-    pastHomeTime = millis();
-    storedState = STATE_HOME;
-    state = STATE_REORIENT; 
-  // } else if (l2 == 0 || r2 == 0){
-  //   stopMotor();
-  //   pastHomeTime = millis();
-  //   storedState = STATE_HOME;
-  //   state = STATE_REORIENT; 
+    pastHomeTime = currTime;
+    state = STATE_HOME; 
   } else {
     goBackward();
   }
 }
 
 void handleHome(){
-  if ((homeTime > pastHomeTime + 6000) || digitalRead(button) == LOW ){ //5 sec loading
-    //storedState = STATE_GP; //both are BP since we are shooting from one spot
-    //state = STATE_REORIENT; 
-    state = STATE_GP; 
+
+/*    For COMPETITION, all we did was make both storedStates STATE_BP, which is the less movement one.
+Then we physically mounted our shooter at an angle to go into Good Press only. We changed the stopping
+distance in STATE_BP to be just outside of the Studio.    */
+  if (homeTime > pastHomeTime + 2500){ //Loading time
+    toggle++; 
+    state = STATE_REORIENT; 
+    if (toggle % 2 == 1){  
+      storedState = STATE_GP;
+    } else {
+      storedState = STATE_BP;
+    } 
   }
 }
-
-
 
 
 /*-----------Fixers-------------------------------------------------------*/
+
+/* Two cases of going wrong. Either it has drifted to be too close to the wall
+OR it is a sufficient distance away, but not parallel to the wall AKA crooked. */
 void callFix(){
+l1 = sonarL1.ping(2*maxL);
+r1 = sonarR2.ping(2*maxL);
   if (close()) {
     stopMotor();
-    //storedState = state;
     state = STATE_FD;
-    exception = 1;
   } else if (crooked()){
     stopMotor();
-    //storedState = state;
     state = STATE_REORIENT;
   } else {
-    state = storedState; 
+    lastTime = currTime; 
   }
+
+//Ensures after "fixing" drift, robot returns to what it was doing or goes to the state you wanted it to
+storedState = state; 
 }
 
-void reorient(){                                          // Turns until L
-  l1 = sonarL1.ping(maxF);
-  r1 = sonarR1.ping(maxF);
+void reorient(){                                          
+  l1 = sonarL1.ping(maxFD);
+  r1 = sonarR1.ping(maxFD);
    if(abs(r1-l1) > 3*cutoffDiff && l1 > 0 && r1 > 0){     // Bottom sensors are reading 
     if(l1 < r1){
       turnRight();                                        // Turn based on sensor readings
@@ -382,25 +395,25 @@ void reorient(){                                          // Turns until L
   }
 }
 
-void fixDistance(){                                       // Goes up or down to desired position
-  l1 = sonarL1.ping(maxF);
-  r1 = sonarR1.ping(maxF);
-  if(l1 > upperBound && r1 > upperBound){                               // Bottom sensors, goes down
-    goRight();
+void fixDistance(){                                       //Goes up or down to desired position based on some tolerance band
+  l1 = sonarL1.ping(maxFD);
+  r1 = sonarR1.ping(maxFD);
+  if(l1 > upperBound && r1 > upperBound){                 //Bottom sensors
+    goRight();                                            //Towards wall
   } else if (l1 < lowerBound && r1 < lowerBound){         // Goes up
-    goLeft();
+    goLeft();                                             //Away from wall
   } else {
     stopMotor(); 
-    state = storedState;
+    state = storedState; //Returns to movement state that it previously was at
     lastTime = currTime;
+    pastShootTime = currTime; 
   }
 }
 
 
-
-
-
 /*-----------Motors and Movement-------------------------------------------------------*/
+
+
 void goForward(){
   analogWrite(enA_1, speed);
   //Motor 1
